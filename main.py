@@ -9,20 +9,36 @@ import socks  # PySocks
 app = Flask(__name__)
 
 # --- PROXY SOCKS5 (Rotating Webshare) ---
-PROXY_HOST = "p.webshare.io"
-PROXY_PORT = 80
-PROXY_USER = "xygajkdy-rotate"
-PROXY_PASS = "yy7o17zu86pw"
+PROXY_HOST = "p.webshare.io".strip()
+PROXY_PORT = 80  # confermato dal tuo screenshot per SOCKS5 rotating
+PROXY_USER = "xygajkdy-rotate".strip()
+PROXY_PASS = "yy7o17zu86pw".strip()
 
-socks.setdefaultproxy(
-    socks.SOCKS5,
-    PROXY_HOST,
-    PROXY_PORT,
-    True,
-    PROXY_USER,
-    PROXY_PASS
-)
-socket.socket = socks.socksocket
+def proxy_preflight():
+    """
+    Verifica che il proxy SOCKS5 accetti le credenziali e permetta una connessione TCP.
+    Se fallisce, solleva un'eccezione chiara (auth/porta/credenziali).
+    """
+    socks.setdefaultproxy(
+        socks.SOCKS5,
+        PROXY_HOST,
+        PROXY_PORT,
+        True,
+        PROXY_USER,
+        PROXY_PASS
+    )
+    # forza tutte le connessioni TCP a passare dal proxy
+    socket.socket = socks.socksocket
+
+    # Prova apertura TCP "neutra"
+    s = socket.socket()
+    s.settimeout(10)
+    try:
+        # server pubblico di test (solo per verificare che il tunnel funzioni)
+        s.connect(("ipv4.webshare.io", 80))
+    finally:
+        s.close()
+
 # ----------------------------------------
 
 MAIL_FROM = "n.vellani@consulenzadedicata.com"
@@ -50,6 +66,17 @@ def check_email():
     email = request.args.get("email")
     if not email or "@" not in email:
         return jsonify({"status": "error", "reason": "Invalid email format"}), 400
+
+    # 0) Proxy preflight: se fallisce, ritorna errore CHIARO di autenticazione proxy
+    try:
+        proxy_preflight()
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "reason": "SOCKS5 proxy authentication/connect failed",
+            "details": str(e),
+            "hint": "Ricontrolla host/porta/username/password e che Webshare sia su SOCKS5 Rotating Endpoint"
+        }), 502
 
     domain = email.split('@')[1]
     error_log = []
